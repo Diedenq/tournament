@@ -61,6 +61,13 @@
   .player-tag[data-gender="female"] { border-left-color: var(--accent-f); }
   .player-tag[data-gender="asyq"] { border-left-color: var(--asyq); }
   
+  /* Кнопки смены пола (для Тоғызқұмалақ) */
+  .gender-btn { background: transparent; border: 1px solid; border-radius: 4px; font-size: 0.65rem; padding: 2px 5px; cursor: pointer; font-weight: bold; font-family: 'DM Mono', monospace; transition: 0.2s; }
+  .gender-m { color: var(--clay); border-color: var(--clay); }
+  .gender-m:hover { background: rgba(194,113,79,0.15); }
+  .gender-f { color: var(--accent-f); border-color: var(--accent-f); }
+  .gender-f:hover { background: rgba(162,91,194,0.15); }
+
   .player-tag .remove-tag { cursor: pointer; color: var(--text-dim); font-size: 1.1rem; padding-left: 4px; line-height: 1; }
   .player-tag .remove-tag:hover { color: var(--lose); }
   
@@ -72,6 +79,8 @@
   .tournament-header { padding: 16px 40px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); background: var(--bg2); flex-wrap: wrap; }
   .btn-reset { background: transparent; color: var(--text-dim); border: 1px solid var(--line); padding: 8px 16px; font-size: 0.75rem; }
   .btn-reset:hover { color: var(--text); }
+  .btn-download { background: rgba(76,175,110,0.1); color: var(--win); border: 1px solid var(--win); padding: 8px 16px; font-size: 0.75rem; }
+  .btn-download:hover { background: rgba(76,175,110,0.25); }
 
   /* ── MEGA BRACKET BOARD ── */
   .bracket-scroll { overflow: auto; padding: 40px; background: var(--bg); min-height: 700px; position: relative; }
@@ -132,6 +141,12 @@
 
   .podium-2 { order: 1; } .podium-1 { order: 2; z-index: 2; margin: 0 10px; } .podium-3 { order: 3; }
 
+  /* Сетка для остальных мест (4+) */
+  .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .result-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+  .result-place { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--text-dim); min-width: 30px; line-height: 1; text-align: center; }
+  .result-name { font-size: 0.85rem; font-weight: 500; }
+
   .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--bg3); border: 1px solid var(--clay); color: var(--text); padding: 12px 22px; border-radius: 8px; font-family: 'DM Mono', monospace; font-size: 0.82rem; z-index: 999; transition: transform 0.3s; }
   .toast.show { transform: translateX(-50%) translateY(0); }
 </style>
@@ -139,7 +154,7 @@
 <body>
 
 <header class="header">
-  <div class="logo">KAZ TENNIS<span>DOUBLE ELIMINATION SYSTEM</span></div>
+  <div class="logo">Tournament<span>DOUBLE ELIMINATION SYSTEM</span></div>
 </header>
 
 <div id="setup-view">
@@ -181,6 +196,7 @@
       <!-- Динамически заполняются -->
     </div>
     <div style="margin-left:auto; display:flex; gap:8px;">
+      <button class="btn btn-download" onclick="downloadResultsCSV()">⬇ СКАЧАТЬ CSV</button>
       <button class="btn btn-reset" onclick="resetTournament()">← ВЕРНУТЬСЯ К НАСТРОЙКАМ</button>
     </div>
   </div>
@@ -204,10 +220,10 @@ const SHEET_URLS = {
 
 // Данные по всем дисциплинам
 const db = {
-  togyz_m: { id: 'togyz_m', title: 'Тоғызқұмалақ (Ерлер)', players:[], matches: {}, results: {} },
-  togyz_f: { id: 'togyz_f', title: 'Тоғызқұмалақ (Әйелдер)', players:[], matches: {}, results: {} },
-  bes_asyq: { id: 'bes_asyq', title: 'Бес асық', players:[], matches: {}, results: {} },
-  asyq_atu: { id: 'asyq_atu', title: 'Асық ату', players:[], matches: {}, results: {} }
+  togyz_m: { id: 'togyz_m', title: 'Тоғызқұмалақ (Ерлер)', players:[], matches: {} },
+  togyz_f: { id: 'togyz_f', title: 'Тоғызқұмалақ (Әйелдер)', players:[], matches: {} },
+  bes_asyq: { id: 'bes_asyq', title: 'Бес асық', players:[], matches: {} },
+  asyq_atu: { id: 'asyq_atu', title: 'Асық ату', players:[], matches: {} }
 };
 
 let activeSetupTab = 'togyz';
@@ -238,7 +254,6 @@ function switchSetupTab(target) {
   const labels = { togyz: 'ТОҒЫЗҚҰМАЛАҚ', bes: 'БЕС АСЫҚ (ӘЙЕЛДЕР)', asyq: 'АСЫҚ АТУ (ЕРЛЕР)' };
   document.getElementById('setupTitleLabel').textContent = `РЕГИСТРАЦИЯ: ${labels[target]}`;
   
-  // Очистка статуса при переключении
   const st = document.getElementById('sheetsStatus');
   st.className = 'sheets-status'; st.textContent = '';
   
@@ -267,22 +282,44 @@ function manualAddPlayer() {
 }
 document.getElementById('playerNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') manualAddPlayer(); });
 
+function toggleGender(type, name) {
+  if (type === 'male') {
+    const i = db.togyz_m.players.indexOf(name);
+    if (i > -1) db.togyz_m.players.splice(i, 1);
+    db.togyz_f.players.push(name);
+  } else if (type === 'female' && activeSetupTab === 'togyz') {
+    const i = db.togyz_f.players.indexOf(name);
+    if (i > -1) db.togyz_f.players.splice(i, 1);
+    db.togyz_m.players.push(name);
+  }
+  renderSetupList();
+}
+
 function renderSetupList() {
   const list = document.getElementById('setupPlayerList'); list.innerHTML = '';
   
   let pList =[];
   if (activeSetupTab === 'togyz') {
-    db.togyz_m.players.forEach(p => pList.push({ name: p, type: 'male', arr: db.togyz_m.players }));
-    db.togyz_f.players.forEach(p => pList.push({ name: p, type: 'female', arr: db.togyz_f.players }));
+    db.togyz_m.players.forEach(p => pList.push({ name: p, type: 'male' }));
+    db.togyz_f.players.forEach(p => pList.push({ name: p, type: 'female' }));
   } else if (activeSetupTab === 'bes') {
-    db.bes_asyq.players.forEach(p => pList.push({ name: p, type: 'female', arr: db.bes_asyq.players }));
+    db.bes_asyq.players.forEach(p => pList.push({ name: p, type: 'female' }));
   } else if (activeSetupTab === 'asyq') {
-    db.asyq_atu.players.forEach(p => pList.push({ name: p, type: 'asyq', arr: db.asyq_atu.players }));
+    db.asyq_atu.players.forEach(p => pList.push({ name: p, type: 'asyq' }));
   }
 
-  pList.forEach((p, idx) => {
+  pList.forEach(p => {
     const li = document.createElement('li'); li.className = 'player-tag'; li.dataset.gender = p.type;
-    li.innerHTML = `<span>${p.name}</span><span class="remove-tag" onclick="removeSetupPlayer('${p.type}', '${p.name}')">×</span>`;
+    li.innerHTML = `<span>${p.name}</span>`;
+    
+    // Кнопка смены пола выводится ТОЛЬКО в дисциплине Тоғызқұмалақ
+    if (activeSetupTab === 'togyz') {
+      const gLabel = p.type === 'male' ? 'М' : 'Ж';
+      const gClass = p.type === 'male' ? 'gender-m' : 'gender-f';
+      li.innerHTML += `<button class="gender-btn ${gClass}" onclick="toggleGender('${p.type}', '${p.name}')" title="Сменить сетку на противоположную">${gLabel}</button>`;
+    }
+    
+    li.innerHTML += `<span class="remove-tag" onclick="removeSetupPlayer('${p.type}', '${p.name}')">×</span>`;
     list.appendChild(li);
   });
 }
@@ -310,11 +347,9 @@ async function loadFromSheets() {
   const st = document.getElementById('sheetsStatus'); st.className = 'sheets-status loading'; st.textContent = 'Загрузка данных из таблицы...';
   try {
     const csv = await fetchCSV(url);
-    
-    // Парсим с учетом того, что первая строка - заголовок ("Аты, тегі"), и фильтруем ошибки формул
     const names = csv.trim().split('\n').slice(1)
       .map(l => (l.match(/(".*?"|[^,]+)(?=,|$)/g)||[])[0]?.replace(/^"|"$/g, '').trim())
-      .filter(n => n && n !== '#N/A' && n !== '#Н/Д'); // <-- Защита от пустых результатов формулы FILTER
+      .filter(n => n && n !== '#N/A' && n !== '#Н/Д');
       
     let before = getTotalPlayers(); names.forEach(addPlayerToState); let added = getTotalPlayers() - before;
     st.className = 'sheets-status ok'; st.textContent = `✓ Загружено ${added} новых игроков в дисциплину`;
@@ -334,7 +369,7 @@ function generateAllTournaments() {
   let firstValid = null;
 
   Object.values(db).forEach(t => {
-    t.matches = {}; t.results = {};
+    t.matches = {};
     if (t.players.length >= 2) {
       if(!firstValid) firstValid = t.id;
       generateDECategory(t.id);
@@ -361,7 +396,6 @@ function generateDECategory(cat) {
   const UB = []; const LB =[];
   const newId = prefix => prefix + (++matchCounter);
 
-  // Создаем узлы UB (Upper Bracket)
   for (let r=0; r<W; r++) {
     UB[r] =[]; let num = N / Math.pow(2, r+1);
     for (let i=0; i<num; i++) {
@@ -371,7 +405,6 @@ function generateDECategory(cat) {
     }
   }
 
-  // Создаем узлы LB (Lower Bracket), количество раундов = 2W - 2
   for (let r=0; r < 2*W - 2; r++) {
     LB[r] =[]; let shift = Math.floor(r/2) + 2; let num = N / Math.pow(2, shift);
     for (let i=0; i<num; i++) {
@@ -381,19 +414,16 @@ function generateDECategory(cat) {
     }
   }
 
-  // Связи UB -> UB
   for (let r=0; r<W-1; r++) {
     for (let i=0; i<UB[r].length; i++) t.matches[UB[r][i]].nextWinnerId = UB[r+1][Math.floor(i/2)];
   }
 
-  // Связи LB -> LB
   for (let r=0; r<LB.length-1; r++) {
     for (let i=0; i<LB[r].length; i++) {
       t.matches[LB[r][i]].nextWinnerId = (r%2 === 0) ? LB[r+1][i] : LB[r+1][Math.floor(i/2)];
     }
   }
 
-  // Связи UB -> LB (Лузера падают)
   for (let i=0; i<UB[0].length; i++) t.matches[UB[0][i]].nextLoserId = LB[0][Math.floor(i/2)]; 
   for (let r=1; r<W; r++) {
     let lbR = 2*r - 1; let lbArr = LB[lbR];
@@ -403,7 +433,6 @@ function generateDECategory(cat) {
     }
   }
 
-  // Grand Finals
   let gf1 = newId('GF1_'); let gf2 = newId('GF2_');
   t.matches[gf1] = { id:gf1, p1:'?', p2:'?', winner:null, loser:null, nextWinnerId:gf2, nextLoserId:null, bracket:'GF', isGF1:true, ubChampNode: UB[W-1][0], round: 0, index: 0 };
   t.matches[gf2] = { id:gf2, p1:'?', p2:'?', winner:null, loser:null, nextWinnerId:null, nextLoserId:null, bracket:'GF', isGF2:true, round: 1, index: 0 };
@@ -411,7 +440,6 @@ function generateDECategory(cat) {
   t.matches[UB[W-1][0]].nextWinnerId = gf1;
   t.matches[LB[LB.length-1][0]].nextWinnerId = gf1;
 
-  // Раскидываем игроков
   const R1_matches =[];
   const doubleMatches = players.length - N/2;
   let pIdx = 0;
@@ -451,14 +479,11 @@ function resolveMatchCore(cat, matchId, winner) {
   if (m.isGF1) {
     const ubChamp = t.matches[m.ubChampNode].winner;
     if (winner === ubChamp || winner === 'BYE') { 
-      if (winner !== 'BYE') { t.results[1] = winner; t.results[2] = loser; }
       t.matches[m.nextWinnerId].p1 = 'BYE'; t.matches[m.nextWinnerId].p2 = 'BYE'; 
     } else { 
       t.matches[m.nextWinnerId].p1 = m.p1; t.matches[m.nextWinnerId].p2 = m.p2;
     }
-  } else if (m.isGF2) {
-    if (winner !== 'BYE') { t.results[1] = winner; t.results[2] = loser; }
-  } else {
+  } else if (!m.isGF2) {
     if (m.nextWinnerId) {
       const nw = t.matches[m.nextWinnerId];
       if (nw.isGF1) { if(m.bracket === 'UB') nw.p1 = winner; else nw.p2 = winner; }
@@ -467,10 +492,6 @@ function resolveMatchCore(cat, matchId, winner) {
     if (m.nextLoserId) {
       const nl = t.matches[m.nextLoserId];
       if (nl.p1 === '?') nl.p1 = loser; else nl.p2 = loser;
-    }
-    
-    if (m.bracket === 'LB' && !m.nextLoserId && m.nextWinnerId && t.matches[m.nextWinnerId].isGF1) {
-      if (loser !== 'BYE') t.results[3] = loser;
     }
   }
 }
@@ -494,11 +515,9 @@ function revertMatch(cat, matchId) {
   const oldW = m.winner; const oldL = m.loser;
   m.winner = null; m.loser = null;
 
-  if (m.isGF1 || m.isGF2) {
-    delete t.results[1]; delete t.results[2];
-    if (m.isGF1) { const gf2 = t.matches[m.nextWinnerId]; revertMatch(cat, gf2.id); gf2.p1 = '?'; gf2.p2 = '?'; }
+  if (m.isGF1) {
+    const gf2 = t.matches[m.nextWinnerId]; revertMatch(cat, gf2.id); gf2.p1 = '?'; gf2.p2 = '?';
   }
-  if (m.bracket === 'LB' && !m.nextLoserId && m.nextWinnerId && t.matches[m.nextWinnerId].isGF1) delete t.results[3];
 
   function clr(nextId, pName) {
     if (!nextId) return; const nm = t.matches[nextId]; if (!nm) return;
@@ -522,17 +541,14 @@ function renderTourBracket() {
   const t = db[activeTourTab];
   if (!t.matches || Object.keys(t.matches).length === 0) return;
 
-  const ubR =[], lbR = [], gfR =[];
+  const ubR =[], lbR =[], gfR =[];
   Object.values(t.matches).forEach(m => {
     if(m.bracket==='UB') { ubR[m.round] = ubR[m.round]||[]; ubR[m.round].push(m); }
     else if(m.bracket==='LB') { lbR[m.round] = lbR[m.round]||[]; lbR[m.round].push(m); }
     else if(m.bracket==='GF') { gfR[m.round] = gfR[m.round]||[]; gfR[m.round].push(m); }
   });
 
-  // Главный контейнер
   const mainWrap = document.createElement('div'); mainWrap.className = 'bracket-main-wrap';
-  
-  // Левая колонка (Включает в себя UB и LB друг под другом)
   const leftCol = document.createElement('div'); leftCol.className = 'bracket-left-col';
   
   function buildSection(roundsArr) {
@@ -547,14 +563,11 @@ function renderTourBracket() {
 
   if (ubR.length) leftCol.appendChild(buildSection(ubR));
   if (lbR.length) leftCol.appendChild(buildSection(lbR));
-  
   mainWrap.appendChild(leftCol);
 
-  // Правая колонка (Гранд Финал - примыкает сбоку)
   if (gfR.length) {
     const gfSec = document.createElement('div'); gfSec.className = 'section-row'; 
-    gfSec.style.alignItems = 'center'; // Выравниваем GF по центру относительно левого блока
-    
+    gfSec.style.alignItems = 'center'; 
     gfR.forEach(arr => {
       const col = document.createElement('div'); col.className = 'round-col';
       arr.sort((a,b)=>a.index-b.index).forEach(m => {
@@ -570,7 +583,6 @@ function renderTourBracket() {
   }
 
   board.appendChild(mainWrap);
-
   renderResults();
   setTimeout(drawSVGPaths, 100);
 }
@@ -636,19 +648,141 @@ function drawSVGPaths() {
 }
 window.addEventListener('resize', () => { if(document.getElementById('tournament-view').style.display==='block') drawSVGPaths(); });
 
+// --- НОВЫЙ ДИНАМИЧЕСКИЙ АЛГОРИТМ ПОДСЧЁТА ПОЛНОГО РЕЙТИНГА ---
+
+// Вынес логику подсчета мест в отдельную функцию, чтобы её можно было использовать и для CSV, и для визуала.
+function getStandingsForCategory(cat) {
+  const t = db[cat];
+  if (!t || !t.players || t.players.length === 0 || !t.matches || Object.keys(t.matches).length === 0) return[];
+
+  let realPlayers = t.players.filter(p => p !== 'BYE');
+  let total = realPlayers.length;
+  let standings =[];
+  
+  let lbLosersByRound = {};
+  let maxLb = -1;
+  Object.values(t.matches).forEach(m => {
+    if (m.bracket === 'LB' && m.winner && m.loser !== 'BYE') {
+      if (!lbLosersByRound[m.round]) lbLosersByRound[m.round] = [];
+      lbLosersByRound[m.round].push(m.loser);
+      if (m.round > maxLb) maxLb = m.round;
+    }
+  });
+  
+  let gf1 = Object.values(t.matches).find(m => m.isGF1);
+  let gf2 = Object.values(t.matches).find(m => m.isGF2);
+  let second = null, first = null;
+  
+  if (gf2 && gf2.winner && gf2.winner !== 'BYE') {
+    first = gf2.winner; second = gf2.loser;
+  } else if (gf1 && gf1.winner && gf1.winner !== 'BYE') {
+    let ubChamp = t.matches[gf1.ubChampNode].winner;
+    if (gf1.winner === ubChamp || gf1.winner === 'BYE') {
+      first = gf1.winner; second = gf1.loser;
+    }
+  }
+  
+  let currentRank = total;
+  let bottomUpTiers =[];
+  for (let r = 0; r <= maxLb; r++) {
+    if (lbLosersByRound[r]) bottomUpTiers.push(lbLosersByRound[r]);
+  }
+  
+  bottomUpTiers.forEach(tier => {
+    let topRankForTier = currentRank - tier.length + 1;
+    let rankStr = tier.length > 1 ? `${topRankForTier}-${currentRank}` : `${currentRank}`;
+    tier.forEach(p => {
+      standings.push({ rank: rankStr, placeNum: topRankForTier, name: p });
+    });
+    currentRank -= tier.length;
+  });
+  
+  if (second && currentRank >= 2) { standings.push({ rank: '2', placeNum: 2, name: second }); currentRank--; }
+  if (first && currentRank >= 1) { standings.push({ rank: '1', placeNum: 1, name: first }); currentRank--; }
+  
+  standings.sort((a,b) => a.placeNum - b.placeNum);
+  return standings;
+}
+
 function renderResults() {
   const s = document.getElementById('resultsSection');
-  const r = db[activeTourTab].results;
-  if (!r[1] && !r[2] && !r[3]) { s.classList.remove('visible'); return; }
+  const standings = getStandingsForCategory(activeTourTab);
+  
+  if (standings.length === 0) { s.classList.remove('visible'); return; }
   s.classList.add('visible');
   
-  s.innerHTML = '<div class="results-title">ИТОГОВЫЙ ПЬЕДЕСТАЛ</div>';
-  let html = `<div class="podium-wrapper">`;
-  if(r[2]) html += `<div class="podium-item podium-2"><div class="podium-name">${r[2]}</div><div class="podium-base"><div class="podium-medal">🥈</div><div class="podium-rank">2</div></div></div>`;
-  if(r[1]) html += `<div class="podium-item podium-1"><div class="podium-name">${r[1]}</div><div class="podium-base"><div class="podium-medal">🥇</div><div class="podium-rank">1</div></div></div>`;
-  if(r[3]) html += `<div class="podium-item podium-3"><div class="podium-name">${r[3]}</div><div class="podium-base"><div class="podium-medal">🥉</div><div class="podium-rank">3</div></div></div>`;
-  html += `</div>`;
-  s.innerHTML += html;
+  let top1 = standings.find(x => x.placeNum === 1);
+  let top2 = standings.find(x => x.placeNum === 2);
+  let top3 = standings.find(x => x.placeNum === 3);
+  
+  s.innerHTML = '<div class="results-title">ИТОГОВЫЙ РЕЙТИНГ</div>';
+  
+  if (top1 || top2 || top3) {
+    let html = `<div class="podium-wrapper">`;
+    if(top2) html += `<div class="podium-item podium-2"><div class="podium-name">${top2.name}</div><div class="podium-base"><div class="podium-medal">🥈</div><div class="podium-rank">2</div></div></div>`;
+    if(top1) html += `<div class="podium-item podium-1"><div class="podium-name">${top1.name}</div><div class="podium-base"><div class="podium-medal">🥇</div><div class="podium-rank">1</div></div></div>`;
+    if(top3) html += `<div class="podium-item podium-3"><div class="podium-name">${top3.name}</div><div class="podium-base"><div class="podium-medal">🥉</div><div class="podium-rank">3</div></div></div>`;
+    html += `</div>`;
+    s.innerHTML += html;
+  }
+  
+  let others = standings.filter(x => x.placeNum >= 4);
+  if (others.length > 0) {
+    let gridHtml = `<div class="results-grid">`;
+    others.forEach(p => {
+      gridHtml += `<div class="result-card"><div class="result-place">${p.rank}</div><div class="result-name">${p.name}</div></div>`;
+    });
+    gridHtml += `</div>`;
+    s.innerHTML += gridHtml;
+  }
+}
+
+// --- СКАЧИВАНИЕ РЕЗУЛЬТАТОВ В CSV ---
+function downloadResultsCSV() {
+  let csvLines =[];
+  // Заголовки таблицы
+  csvLines.push('"Пол","Имя Фамилия","Место","Дисциплина"');
+
+  // Проходимся по всем возможным дисциплинам
+  Object.values(db).forEach(t => {
+    // Если для дисциплины турнир еще не был сгенерирован или нет матчей, пропускаем
+    if (!t.matches || Object.keys(t.matches).length === 0) return;
+    
+    const standings = getStandingsForCategory(t.id);
+    if (standings.length === 0) return; // Пропускаем, если еще нет ни одного выбывшего/победителя
+    
+    // Определяем пол из названия идентификатора
+    let gender = (t.id === "togyz_m" || t.id === "asyq_atu") ? "Мужчина" : "Женщина";
+    
+    standings.forEach(st => {
+      // Заменяем кавычки двойными кавычками для правильного формата CSV
+      let name = st.name.replace(/"/g, '""');
+      let rank = String(st.rank).replace(/"/g, '""');
+      let discipline = t.title.replace(/"/g, '""');
+      
+      csvLines.push(`"${gender}","${name}","${rank}","${discipline}"`);
+    });
+  });
+
+  if (csvLines.length === 1) {
+    showToast('Нет результатов для скачивания. Турнир еще не начался.');
+    return;
+  }
+
+  // BOM-маркер (\uFEFF) помогает Excel корректно распознавать кириллицу (UTF-8)
+  let csvContent = "\uFEFF" + csvLines.join("\n");
+  let blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  
+  let link = document.createElement("a");
+  if (link.download !== undefined) {
+    let url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "tournament_results.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }
 
 function resetTournament() {
